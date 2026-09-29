@@ -16,6 +16,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+app.use(require('./routes/documents.routes'));
 
 // Endpoint de verificação de saúde. As demais rotas (/upload, /documents,
 // /documents/:id/download) serão implementadas durante o Passo 2.
