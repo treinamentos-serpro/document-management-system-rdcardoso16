@@ -1,10 +1,9 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { storageDirectory } = require('../config/storage');
 
 const documents = new Map();
-const storageDirectory = process.env.STORAGE_DIR
-  ? path.resolve(process.env.STORAGE_DIR)
-  : path.resolve(__dirname, '../../storage');
+const storageNamePattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 async function save(document) {
   documents.set(document.id, { ...document });
@@ -23,11 +22,16 @@ async function findById(id) {
 }
 
 function getStoredFilePath(storageName) {
-  if (!storageName || path.basename(storageName) !== storageName) {
+  if (typeof storageName !== 'string' || !storageNamePattern.test(storageName)) {
     throw new Error('Nome interno de arquivo inválido.');
   }
 
-  return path.join(storageDirectory, storageName);
+  const resolvedPath = path.resolve(storageDirectory, storageName);
+  if (path.dirname(resolvedPath) !== storageDirectory) {
+    throw new Error('Nome interno de arquivo inválido.');
+  }
+
+  return resolvedPath;
 }
 
 async function removeStoredFile(storageName) {

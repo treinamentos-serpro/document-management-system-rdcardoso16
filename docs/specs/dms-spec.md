@@ -58,6 +58,7 @@ Esse mecanismo serve apenas para separar dados na versão inicial. Como o valor 
 | RNF-07 | O fluxo do backend segue `routes -> controllers -> services -> repositories`. |
 | RNF-08 | O backend usa JavaScript CommonJS e `node:test`; o frontend segue React, Vite e ESM. |
 | RNF-09 | Falhas de leitura, escrita e upload são tratadas nos limites do sistema sem expor detalhes internos. |
+| RNF-10 | A rota de upload limita a 20 requisições por IP em uma janela de 15 minutos e retorna `429 RATE_LIMITED` ao exceder o limite. |
 
 ### Limite de upload
 
@@ -75,9 +76,8 @@ O limite padrão por arquivo é `10 MiB` (`10485760` bytes), configurável por `
 | `uploadedAt` | string | Público | Data e hora do upload em ISO 8601, UTC. |
 | `owner` | string | Público | Identificador recebido em `X-User-Id`. |
 | `storageName` | string | Interno | Nome gerado pelo servidor para localizar o arquivo no diretório local. |
-| `mimeType` | string | Interno | Tipo de mídia informado pelo upload, usado no download com fallback seguro. |
 
-Os campos internos `storageName` e `mimeType` não são retornados nas respostas de listagem ou upload. Caminhos absolutos do filesystem nunca são expostos pela API. Os metadados ficam em uma estrutura em memória no repositório; as consultas de listagem filtram por `owner`.
+O campo interno `storageName` não é retornado nas respostas de listagem ou upload. O MIME informado pelo cliente não é persistido nem considerado confiável; downloads usam `application/octet-stream`. Caminhos absolutos do filesystem nunca são expostos pela API. Os metadados ficam em uma estrutura em memória no repositório; as consultas de listagem filtram por `owner`.
 
 Após reiniciar o backend, os metadados são perdidos, embora os arquivos possam permanecer no diretório local. Esses arquivos tornam-se inacessíveis pela API e não são removidos automaticamente nesta fase. A aplicação deve operar em uma única instância enquanto os metadados permanecerem em memória.
 
@@ -118,6 +118,8 @@ Envia um documento com `Content-Type: multipart/form-data`, cabeçalho `X-User-I
 
 **Erros:** `400 FILE_REQUIRED`, `400 INVALID_UPLOAD`, `400 INVALID_USER_ID`, `413 FILE_TOO_LARGE` ou `500 INTERNAL_ERROR`. Os metadados só são registrados após a gravação do arquivo; se o registro falhar, o arquivo deve ser removido.
 
+Uploads acima do limite de frequência retornam `429 RATE_LIMITED`.
+
 ### `GET /documents`
 
 Lista os documentos do usuário indicado em `X-User-Id`.
@@ -144,7 +146,7 @@ Sem documentos, retornar `200 OK` com `documents: []`. Erros: `400 INVALID_USER_
 
 Baixa o documento indicado, se pertencer ao usuário de `X-User-Id`. No sucesso (`200 OK`), o corpo é binário e a resposta usa `Content-Disposition: attachment`, `Content-Type` correspondente ao tipo armazenado (ou `application/octet-stream`) e `Content-Length` quando disponível.
 
-Erros: `400 INVALID_DOCUMENT_ID`, `400 INVALID_USER_ID`, `404 DOCUMENT_NOT_FOUND` para documento ausente, alheio ou arquivo indisponível, ou `500 INTERNAL_ERROR` para falha inesperada de leitura.
+Erros: `400 INVALID_DOCUMENT_ID`, `400 INVALID_USER_ID`, `404 DOCUMENT_NOT_FOUND` para documento ausente, alheio ou arquivo indisponível, ou `500 INTERNAL_ERROR` para falha inesperada de leitura. Por segurança, downloads usam `Content-Type: application/octet-stream` e `X-Content-Type-Options: nosniff`; o MIME informado pelo upload não é considerado confiável.
 
 ## 8. Configuração
 
@@ -189,7 +191,9 @@ Etapas de implementação e critérios de aceite. O mapeamento de arquivos espec
 ## 11. Riscos e limitações
 
 - `X-User-Id` não autentica o usuário e pode ser falsificado; não é adequado para produção sem autenticação real.
+- O rate limit é por IP observado pelo Express, não por identidade autenticada. Atrás de proxy, vários usuários podem compartilhar o mesmo limite; a configuração de proxies confiáveis deve ser explícita e restrita aos proxies controlados pela aplicação.
 - Reiniciar o processo apaga os metadados em memória, podendo deixar arquivos órfãos no diretório local.
 - Múltiplas instâncias não compartilham os metadados e podem apresentar resultados diferentes.
+- O proxy `/api` configurado no Vite só cobre desenvolvimento; produção precisa de reverse proxy ou origem de API configurada.
 - Não há validação do conteúdo nem varredura antivírus; o MIME fornecido pelo cliente pode ser falso.
 - O armazenamento local depende do espaço disponível e das permissões do ambiente do backend.

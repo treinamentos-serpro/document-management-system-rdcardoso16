@@ -27,7 +27,6 @@ async function createDocument(file, owner) {
     uploadedAt: new Date().toISOString(),
     owner,
     storageName: file.filename,
-    mimeType: file.mimetype || 'application/octet-stream',
   };
 
   try {

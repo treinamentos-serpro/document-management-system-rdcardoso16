@@ -6,7 +6,7 @@ function requireUser(request, response, next) {
   if (!userId || !userId.trim() || userId.length > 128 || /[\u0000-\u001f\u007f]/.test(userId)) {
     return response.status(400).json({
       error: {
-        code: 'USER_ID_REQUIRED',
+        code: 'INVALID_USER_ID',
         message: 'Informe um identificador de usuário válido.',
       },
     });
@@ -44,15 +44,29 @@ async function list(request, response, next) {
 }
 
 async function download(request, response, next) {
+  const documentIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!documentIdPattern.test(request.params.id)) {
+    return response.status(400).json({
+      error: {
+        code: 'INVALID_DOCUMENT_ID',
+        message: 'Identificador do documento inválido.',
+      },
+    });
+  }
+
   try {
     const { document, filePath } = await documentService.getDocumentForDownload(
       request.params.id,
       request.userId,
     );
 
-    response.set('X-Content-Type-Options', 'nosniff');
-    return response.download(filePath, document.originalName, (error) => {
-      if (error && !response.headersSent) {
+    return response.download(filePath, document.originalName, {
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    }, (error) => {
+      if (error) {
         return next(error);
       }
       return undefined;
@@ -80,7 +94,7 @@ function handleError(error, request, response, next) {
   }
 
   const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 500;
-  const code = error.code || 'INTERNAL_SERVER_ERROR';
+  const code = statusCode >= 500 ? 'INTERNAL_ERROR' : error.code || 'REQUEST_FAILED';
   const message = statusCode < 500
     ? error.message
     : 'Não foi possível processar a solicitação.';
