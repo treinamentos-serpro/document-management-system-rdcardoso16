@@ -1,5 +1,4 @@
 const crypto = require('node:crypto');
-const fs = require('node:fs/promises');
 const documentRepository = require('../repositories/documents.repository');
 
 function createServiceError(statusCode, code, message) {
@@ -7,6 +6,10 @@ function createServiceError(statusCode, code, message) {
   error.statusCode = statusCode;
   error.code = code;
   return error;
+}
+
+function createDocumentNotFoundError() {
+  return createServiceError(404, 'DOCUMENT_NOT_FOUND', 'Documento não encontrado.');
 }
 
 function toPublicDocument(document) {
@@ -48,18 +51,12 @@ async function getDocumentForDownload(id, owner) {
   const document = await documentRepository.findById(id);
 
   if (!document || document.owner !== owner) {
-    throw createServiceError(404, 'DOCUMENT_NOT_FOUND', 'Documento não encontrado.');
+    throw createDocumentNotFoundError();
   }
 
   const filePath = documentRepository.getStoredFilePath(document.storageName);
-
-  try {
-    await fs.access(filePath);
-  } catch (error) {
-    if (error.code === 'ENOENT') {
-      throw createServiceError(404, 'DOCUMENT_NOT_FOUND', 'Documento não encontrado.');
-    }
-    throw error;
+  if (!(await documentRepository.storedFileExists(document.storageName))) {
+    throw createDocumentNotFoundError();
   }
 
   return { document: toPublicDocument(document), filePath };

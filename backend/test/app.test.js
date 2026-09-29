@@ -13,6 +13,7 @@ process.env.MAX_FILE_SIZE_BYTES = '32';
 const app = require('../src/app');
 const controller = require('../src/controllers/documents.controller');
 const documentRepository = require('../src/repositories/documents.repository');
+const documentService = require('../src/services/documents.service');
 
 after(async () => {
   await fsPromises.rm(storageDirectory, { recursive: true, force: true });
@@ -146,6 +147,36 @@ test('rejeita nomes internos fora do formato UUID e não expõe erros internos',
   assert.equal(response.statusCode, 500);
   assert.equal(responseBody.error.code, 'INTERNAL_ERROR');
   assert.equal(responseBody.error.message.includes('private'), false);
+});
+
+test('o repositório verifica a existência de arquivos armazenados', async () => {
+  const storageName = '123e4567-e89b-42d3-a456-426614174000';
+  const filePath = documentRepository.getStoredFilePath(storageName);
+  await fsPromises.writeFile(filePath, 'conteudo');
+
+  try {
+    assert.equal(await documentRepository.storedFileExists(storageName), true);
+    await fsPromises.unlink(filePath);
+    assert.equal(await documentRepository.storedFileExists(storageName), false);
+    await assert.rejects(documentRepository.storedFileExists('../document.txt'));
+  } finally {
+    await fsPromises.rm(filePath, { force: true });
+  }
+});
+
+test('o serviço retorna documento não encontrado quando o arquivo armazenado não existe', async () => {
+  const id = '123e4567-e89b-42d3-a456-426614174001';
+  await documentRepository.save({
+    id,
+    owner: 'missing-file-owner',
+    storageName: id,
+    uploadedAt: new Date().toISOString(),
+  });
+
+  await assert.rejects(
+    documentService.getDocumentForDownload(id, 'missing-file-owner'),
+    { statusCode: 404, code: 'DOCUMENT_NOT_FOUND' },
+  );
 });
 
 test('limita uploads repetidos e retorna erro 429 no contrato JSON', async () => {
